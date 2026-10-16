@@ -182,13 +182,9 @@ function printImage(image) {
 function momir(manaValue) {
   const query = makeQuery({
     q: [
-      "legal:vintage",
+      "legal:commander",
       "-set_type:funny", // No unsets
-      "type:/^[^\\/]*Creature/", // Creature on the front side
-      "-type:land",
-      "-mana>=x", // No {X} in the mana cost
-      "-mana:/^$/", // No cards without a mana cost
-      `cmc:${manaValue}`,
+      "-type:land"
     ].join("+"),
     format: "image",
     version: "border_crop",
