@@ -49,8 +49,7 @@ h1 {
 }
 
 #momir-buttons {
-  display: flex;
-  flex-wrap: wrap;
+  display: block;
 }
 
 .momir-button {
