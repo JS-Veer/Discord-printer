@@ -257,9 +257,9 @@ document.getElementById("zen-button").addEventListener("click", event => {
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("momir-buttons");
 
-  [...Array(14).keys(), 15, 16].forEach(x => {
+  [1].forEach(x => {
     const button = document.createElement("button");
-    button.textContent = x;
+    button.textContent = "Random";
     button.classList.add("momir-button", "btn", "btn-primary");
     button.addEventListener("click", () => momir(x));
     container.appendChild(button);
