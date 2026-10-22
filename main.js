@@ -183,7 +183,8 @@ function momir(manaValue) {
   const query = makeQuery({
     q: [
       "legal:commander",
-      "-set_type:funny", // No unsets
+      "-t:sticker",
+      "-t:attraction",
       "-type:land"
     ].join("+"),
     format: "image",
