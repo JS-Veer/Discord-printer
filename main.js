@@ -179,14 +179,15 @@ function printImage(image) {
   }
 }
 
-function momir(manaValue) {
+function makeQuery(params, separator) {
+  return Object.entries(params)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(separator);
+}
+
+function momir(filter) {
   const query = makeQuery({
-    q: [
-      "legal:commander",
-      "-t:sticker",
-      "-t:attraction",
-      "-type:land"
-    ].join("+"),
+    q: filter,
     format: "image",
     version: "border_crop",
   }, "&");
@@ -258,11 +259,16 @@ document.getElementById("zen-button").addEventListener("click", event => {
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("momir-buttons");
 
-  [1].forEach(x => {
+  [
+    {label: "Random", filter: "f:c -t:land -t:sticker -t:attraction"},
+    {label: "Random Attraction", filter: "f:c t:attraction"},
+    {label: "Random sticker", filter: "f:c t:sticker"},
+    {label: "True Random", filter: "-t:land game:paper"},
+  ].forEach(({label, filter}) => {
     const button = document.createElement("button");
-    button.textContent = "Random";
+    button.textContent = label;
     button.classList.add("momir-button", "btn", "btn-primary");
-    button.addEventListener("click", () => momir(x));
+    button.addEventListener("click", () => momir(filter));
     container.appendChild(button);
   });
 
