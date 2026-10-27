@@ -1,0 +1,560 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="description" content="Tool for printing RANDOM-MTG cards for playing Discord">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+<style>
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  background-color: black;
+  color: #ddd;
+  padding-top: 5px;
+  font-family: "text", serif;
+}
+
+h1 {
+  text-align: center;
+  font-family: "title", serif;
+  margin-bottom: -5px;
+}
+
+.btn {
+  font-size: 1.15rem;
+  padding: 5px 15px 2px 15px;
+  margin: 5px;
+}
+
+.alert {
+  width: 80%;
+  padding: 4px;
+  margin-bottom: 2px;
+  display: inline-block;
+}
+
+.alert-primary {
+  background-color: #333;
+  border-color: #555;
+  color: #ddd;
+}
+
+.d-none {
+  display: none;
+}
+
+.main-container {
+  max-width: 400px;
+  text-align: center;
+}
+
+#card-image {
+  width: 100%;
+}
+
+.history-image {
+  width: calc(20% - 6px);
+  margin: 3px;
+}
+
+.history-image.selected {
+  outline: 2px solid red;
+}
+
+@font-face {
+  font-family: "title";
+  src: url("fonts/beleren-b.woff2") format("woff2"),
+       url("fonts/beleren-b.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "text";
+  src: url("fonts/mplantin.woff2") format("woff2"),
+       url("fonts/mplantin.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@media print {
+  body {
+    background-color: white;
+  }
+
+  h1, #content, #controls, #zen-button, #delete-history-button {
+    display: none;
+  }
+
+  #card-image {
+    //Printers are usually set to 10mm Margins so... print even smaller XP
+    width: 48mm;
+    max-width: 48mm;
+    margin: 0 auto;
+    display: block;
+  }
+}
+
+</style>
+
+  <title>MTG Card Randomizer</title>
+
+</head>
+<body>
+      <h1>MTG Card Randomizer</h1>
+  <div class="main-container">
+    <div id="content">
+      <div id="RandomMTG-buttons"></div>
+      <div id="loadingAlert" class="alert alert-primary d-none" role="alert">
+        <span id="loadingMessage"></span>
+      </div>
+      <div id="errorAlert" class="alert d-none" role="alert"></div>
+    </div>
+    <img id="card-image" alt="card image" class="d-none" />
+    <div id="controls">
+      <div id="mode-selection">
+                <div id="history"></div>
+        <strong>Mode:</strong>
+        <div>
+          <input type="radio" name="mode" id="showMode" value="show" checked>
+          <label for="showMode">Show</label>
+        </div>
+        <div>
+          <input type="radio" name="mode" id="rawbtMode" value="rawbt">
+          <label for="rawbtMode">RawBT</label>
+        </div>
+      </div>
+            <button id="print-button" class="btn">Print</button>
+            <button id="flip-button" class="btn d-none">Flip</button>
+    </div>
+ <div id="controls">
+  <details>
+      <button id="delete-history-button" class="btn">Delete selected</button>
+<div>
+        <input id="search-input"> <button id="search-bar" class="btn">Search</button>
+<br>
+        e.g. (t:demon o:flying pow=4 tou=3 t:token)  
+    </details>
+    <div id="controls">
+      <button id="zen-button" class="btn">Zen mode</button>
+
+  </div>
+
+
+
+
+
+
+
+  <script>
+
+//Safety Checks And Warnings
+async function fetchImage(url) {
+  const response = await fetch(url, {cache: "no-store"});
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${await getScryfallError(response)}`);
+  }
+
+  const blob = await response.blob();
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getScryfallError(response) {
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    const error = await response.json();
+
+    if ("warnings" in error) {
+      return `${error.details} ${error.warnings}`;
+    }
+
+    return error.details;
+  }
+
+  return await response.text();
+}
+
+//Flip button
+let cardFaces = [];
+let faceIndex = 0;
+
+function FlipButton() {
+  const btn = document.getElementById("flip-button");
+  if (!btn) {
+    return;
+  }
+  const card = document.getElementById("card-image");
+  const show = !card.classList.contains("d-none") && cardFaces.length > 1;
+  btn.classList.toggle("d-none", !show);
+  if (show) {
+    btn.textContent = faceIndex === 0 ? "Flip" : "Flip(back)";
+  }
+}
+
+//Then Add to History  -> Its memory, And some extra guard rails to prevent it from forgetting stuff
+//Now also remembers the back image
+function addToHistory(image, backImage) {
+  const history = document.getElementById("history");
+  const element = document.createElement("img");
+  element.src = image;
+  element.alt = "previous card image";
+  element.classList.add("history-image");
+  element.dataset.front = image;
+  if (backImage && backImage !== image) {
+    element.dataset.back = backImage;
+  }
+
+  element.addEventListener("click", () => {
+    addCurrentCardToHistory();
+    document.querySelectorAll(".history-image.selected").forEach(el => el.classList.remove("selected"));
+    element.classList.add("selected");
+    showImage(element.dataset.front || image, element.dataset.back || null);
+  });
+
+  history.appendChild(element);
+
+  while (history.children.length > 60) {
+    history.removeChild(history.children[0]);
+  }
+}
+
+function addCurrentCardToHistory() {
+  const card = document.getElementById("card-image");
+  if (card.classList.contains("d-none")) {
+    return;
+  }
+  const history = document.getElementById("history");
+  if (cardFaces.length > 1) {
+    const front = cardFaces[0];
+    // One thumbnail per card, holding both faces.
+    if ([...history.children].some(el => (el.dataset.front || el.src) === front)) {
+      return;
+    }
+    addToHistory(cardFaces[0], cardFaces[1]);
+    return;
+  }
+  // Prevents wierd Double archiving. (e.g. re-shown from history).
+  if ([...history.children].some(el => el.src === card.src)) {
+    return;
+  }
+  addToHistory(card.src);
+}
+
+//More FlipFunction
+function showImage(url, backUrl) {
+  const card = document.getElementById("card-image");
+  if (backUrl && backUrl !== url) {
+    cardFaces = [url, backUrl];
+  } else {
+    cardFaces = [url];
+  }
+  faceIndex = 0;
+  card.src = url;
+  card.classList.remove("d-none");
+
+  hideLoading();
+  FlipButton();
+}
+
+//The original Print function, HTML now also has extra stuff to prevent showing more then the IMG.
+function getPrintMode() {
+  const modeSelection = document.getElementById("mode-selection");
+  return modeSelection.querySelector("input[name='mode']:checked").value;
+}
+
+function printRawbt(image){
+  showLoading("Printing...")
+
+  const socket = new WebSocket("ws://localhost:40213/");
+
+  socket.addEventListener("error", event => showError("Failed to connect to RawBT WS API"));
+
+  socket.addEventListener("open", event => {
+    const job = {commands: [{
+      command: "image",
+      base64: image.split(",")[1],
+      attributesImage: {
+        graphicFilter: 2, // Atkinson filter
+      },
+    }]};
+
+//Possibly useless old java script to converts a JSON string into a JavaScript object or value, 
+//optionally transforming values with a reviver functions, stops working if removed, so kept.
+    socket.send(JSON.stringify(job));
+  });
+
+  socket.addEventListener("message", event => {
+    response = JSON.parse(event.data);
+
+    switch (response.responseType) {
+    case "progress":
+      showLoading(`Printing... ${100 * response.progress} %`);
+      break;
+    case "success":
+      hideLoading();
+      socket.close();
+      break;
+    case "error":
+      showError(`RawBT error: ${response.errorMessage}`);
+      socket.close();
+      break;
+    default:
+      showError(`Unknown RawBT response: ${event.data}`);
+      socket.close();
+    }
+  });
+}
+
+//Safety Checks And Warnings
+function setButtonsDisabled(value = true) {
+  const buttons = document.querySelectorAll(".RandomMTG-button");
+  buttons.forEach(button => {
+    button.disabled = value;
+  });
+}
+
+function showAlert(element) {
+  element.classList.remove("d-none");
+}
+
+function hideAlert(element) {
+  element.classList.add("d-none");
+}
+
+function showLoading(message) {
+  document.getElementById("loadingMessage").textContent = message;
+  showAlert(document.getElementById("loadingAlert"));
+  setButtonsDisabled();
+}
+
+function showError(message) {
+  const errorAlert = document.getElementById("errorAlert");
+
+  console.error(message);
+  errorAlert.textContent = message;
+  showAlert(errorAlert);
+  hideLoading();
+}
+
+function hideLoading() {
+  hideAlert(document.getElementById("loadingAlert"));
+  setButtonsDisabled(false);
+}
+
+function hideError() {
+  hideAlert(document.getElementById("errorAlert"));
+}
+
+
+//Important For printing, Integrated with flippy, only prints Displayed side.
+function printImage(front, back) {
+  const mode = getPrintMode();
+  switch (mode) {
+  case "show":
+    showImage(front, back);
+    break;
+  case "rawbt":
+    printRawbt(front);
+    addToHistory(front, back);
+    break;
+  default:
+    console.error(`Unknown print mode: ${mode}`);
+  }
+}
+
+//The Search Query
+function makeQuery(params, separator) {
+  return Object.entries(params)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(separator);
+}
+
+//Now fetches Json instead of format=image, for Flippy functionality
+function RandomMTG(filter) {
+  const query = makeQuery({
+    q: filter,
+  }, "&");
+
+  const url = `https://api.scryfall.com/cards/random?${query}`;
+
+  addCurrentCardToHistory();
+  document.getElementById("card-image").classList.add("d-none");
+  FlipButton();
+
+  hideError();
+  showLoading("Fetching image...");
+
+  fetch(url, {cache: "no-store"})
+    .then(async response => {
+      if (!response.ok) {
+        throw new Error(await getScryfallError(response));
+      }
+      return response.json();
+    })
+    .then(async data => {
+      let frontUrl = data.image_uris && data.image_uris.border_crop;
+      let backUrl = null;
+      if (!frontUrl && data.card_faces && data.card_faces.length) {
+        frontUrl = data.card_faces[0] && data.card_faces[0].image_uris && data.card_faces[0].image_uris.border_crop;
+        backUrl = data.card_faces[1] && data.card_faces[1].image_uris && data.card_faces[1].image_uris.border_crop;
+      }
+      if (!frontUrl) {
+        throw new Error("No image found for this card");
+      }
+      const front = await fetchImage(frontUrl);
+      let back = null;
+      if (backUrl) {
+        try {
+          back = await fetchImage(backUrl);
+        } catch (e) {
+          console.warn("Back face fetch failed:", e);
+        }
+      }
+      printImage(front, back);
+    })
+    .catch(error => {
+      showError(error.message);
+      hideLoading();
+    });
+}
+
+//Selector
+document.querySelectorAll("input[name='mode']").forEach(radio => {
+  radio.addEventListener("input", event => {
+    localStorage.setItem("RandomMTG-printMode", event.target.value);
+
+    const card = document.getElementById("card-image")
+
+    if (event.target.value == "rawbt") {
+      addCurrentCardToHistory();
+      card.classList.add("d-none");
+      FlipButton();
+    } else if (card.classList.contains("d-none")) {
+      const history = document.getElementById("history");
+
+      if (history.children.length > 0) {
+        const previousCard = history.children[history.children.length - 1];
+        history.removeChild(previousCard);
+        showImage(previousCard.dataset.front || previousCard.src, previousCard.dataset.back || null);
+      }
+    }
+  });
+});
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement) {
+    document.getElementById("controls").classList.remove("d-none");
+  }
+});
+
+//Zen mode
+document.getElementById("zen-button").addEventListener("click", event => {
+  document.getElementById("controls").classList.add("d-none");
+
+  const elem = document.documentElement;
+  if (elem.requestFullscreen) {
+    elem.requestFullscreen();
+  } else if (elem.mozRequestFullScreen) {
+    elem.mozRequestFullScreen();
+  } else if (elem.webkitRequestFullscreen) {
+    elem.webkitRequestFullscreen();
+  } else if (elem.msRequestFullscreen) {
+    elem.msRequestFullscreen();
+  }
+});
+
+//print
+document.getElementById("print-button").addEventListener("click", () => {
+  const card = document.getElementById("card-image");
+  if (card.classList.contains("d-none")) {
+    return;
+  }
+  // Print only when its actually ready to print.
+  if (card.complete) {
+    window.print();
+  } else {
+    card.onload = () => window.print();
+  }
+});
+
+//Delete history now even more Complex... To prevent re-archiving the card just removed.
+document.getElementById("delete-history-button").addEventListener("click", () => {
+  const selected = document.querySelector(".history-image.selected");
+  if (!selected) {
+    return;
+  }
+  const card = document.getElementById("card-image");
+  const selFront = (selected.dataset && selected.dataset.front) || selected.src;
+  const curFront = cardFaces[0];
+  if (!card.classList.contains("d-none") && (card.src === selected.src || (selFront && curFront && selFront === curFront))) {
+    card.classList.add("d-none");
+    FlipButton();
+  }
+  selected.remove();
+});
+
+//Flippy stores in history with front face.
+document.getElementById("flip-button").addEventListener("click", () => {
+  if (cardFaces.length < 2) {
+    return;
+  }
+  faceIndex = 1 - faceIndex;
+  const card = document.getElementById("card-image");
+  card.src = cardFaces[faceIndex];
+  FlipButton();
+});
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  const container = document.getElementById("RandomMTG-buttons");
+
+//Search Bar, so you can search for tokens to print and stuff > Meh.. Not easy to use.
+//Must know exactly what token you are searching for and how to use scryfall
+//Example -is:dfc (t:token t:demon o:flying pow=4) still returns 2 tokens.
+document.getElementById("search-bar").addEventListener("click", () => {
+  const filter = document.getElementById("search-input").value.trim();
+  if (filter) {
+    RandomMTG(filter);
+  }
+});
+document.getElementById("search-input").addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    document.getElementById("search-bar").click();
+  }
+});
+
+
+//Add more labels for more easy buttons.
+  [
+    {label: "EDH Random", filter: "f:c -t:land -t:sticker -t:attraction"},
+    {label: "Random Attraction", filter: "f:c t:attraction"},
+    {label: "Random sticker", filter: "f:c t:sticker"},
+    {label: "True Random", filter: "-t:land game:paper"},
+  ].forEach(({label, filter}) => {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.classList.add("RandomMTG-button", "btn");
+    button.addEventListener("click", () => RandomMTG(filter));
+    container.appendChild(button);
+  });
+
+  const savedMode = localStorage.getItem("RandomMTG-printMode");
+  const modeElement = document.querySelector(`input[name="mode"][value="${savedMode}"]`);
+  if (savedMode && modeElement) {
+    modeElement.checked = true;
+  }
+});
+</script>
+</body>
+</html>
